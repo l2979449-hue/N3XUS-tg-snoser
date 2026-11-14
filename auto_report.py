@@ -5,14 +5,16 @@ import requests
 import threading
 from pyrogram import Client
 from pyrogram.raw import functions, types as raw_types
-import config
+
+# ВПИШИТЕ СВОИ ДАННЫЕ СЮДА:
+API_ID = 1234567 
+API_HASH = "abcdef1234567890abcdef1234567890"
 
 SESSIONS_DIR = "sessions"
 active_proxies = []
 proxy_lock = threading.Lock()
 
 def check_proxy(ip):
-    # Пробуем подключиться к Telegram через прокси
     proxy_url = f"http://{ip}"
     try:
         res = requests.get("https://api.telegram.org", proxies={"http": proxy_url, "https": proxy_url}, timeout=3)
@@ -32,52 +34,43 @@ async def proxy_scanner():
                 random.shuffle(ips)
                 for ip in ips:
                     with proxy_lock:
-                        if len(active_proxies) >= 10: # Держим в пуле 10 штук
+                        if len(active_proxies) >= 10:
                             break
-                    # Проверяем прокси в отдельном потоке, чтобы не блокировать
                     is_alive = await asyncio.to_thread(check_proxy, ip)
                     if is_alive:
                         with proxy_lock:
                             if ip not in active_proxies:
                                 active_proxies.append(ip)
-                                print(f"[+] Найден живой прокси: {ip}")
-        except Exception as e:
+                                print(f"[+] Найден прокси: {ip}")
+        except Exception:
             pass
         await asyncio.sleep(2)
 
-async def report_single_session(session_path, target_bot, api_id, api_hash):
+async def report_single_session(session_path, target_bot):
     session_name = os.path.basename(session_path).replace(".session", "")
     
-    # Берем случайный прокси
     with proxy_lock:
         if not active_proxies:
-            print(f"[{session_name}] ❌ Нет прокси, ждем...")
+            print(f"[{session_name}] ❌ Нет прокси.")
             return False
         proxy_ip = random.choice(active_proxies)
     
-    print(f"[{session_name}] Подключаемся через {proxy_ip} к @{target_bot}...")
+    print(f"[{session_name}] Через {proxy_ip} заходим в @{target_bot}...")
     
-    # Парсим IP и порт
     host = proxy_ip.split(":")[0]
     port = int(proxy_ip.split(":")[1]) if ":" in proxy_ip else 80
     
     app = Client(
-        name=session_name, 
-        api_id=api_id, 
-        api_hash=api_hash, 
-        workdir=SESSIONS_DIR, 
-        no_updates=True,
+        name=session_name, api_id=API_ID, api_hash=API_HASH, 
+        workdir=SESSIONS_DIR, no_updates=True,
         proxy=dict(scheme="http", hostname=host, port=port)
     )
     
     try:
         await app.start()
-        
-        # 1. Отправляем /start
         await app.send_message(target_bot, "/start")
-        await asyncio.sleep(3) # Ждем капчу
+        await asyncio.sleep(3)
         
-        # 2. Ищем сообщение
         found_msg_id = None
         async for msg in app.get_chat_history(target_bot, limit=5):
             if msg.from_user and msg.from_user.is_bot:
@@ -85,10 +78,9 @@ async def report_single_session(session_path, target_bot, api_id, api_hash):
                 break
                 
         if not found_msg_id:
-            print(f"[{session_name}] ❌ Бот не прислал сообщение.")
+            print(f"[{session_name}] ❌ Бот не ответил.")
             return False
             
-        # 3. Жалуемся на наркотики
         peer = await app.resolve_peer(target_bot)
         await app.invoke(
             functions.messages.Report(
@@ -97,62 +89,51 @@ async def report_single_session(session_path, target_bot, api_id, api_hash):
                 message="Данный бот рекламирует и продает наркотики. Прошу проверить и заблокировать."
             )
         )
-        print(f"[{session_name}] ✅ Жалоба на @{target_bot} отправлена!")
+        print(f"[{session_name}] ✅ Жалоба отправлена!")
         return True
         
     except Exception as e:
-        print(f"[{session_name}] ❌ Ошибка через {proxy_ip}: {str(e)[:50]}...")
-        # Если прокси сдох, удаляем его из пула
+        print(f"[{session_name}] ❌ Ошибка: {str(e)[:50]}")
         with proxy_lock:
             if proxy_ip in active_proxies:
                 active_proxies.remove(proxy_ip)
         return False
     finally:
-        try:
-            await app.stop()
-        except:
-            pass
+        try: await app.stop()
+        except: pass
 
 async def main():
     bots_input = os.environ.get("BOTS_LIST", "")
-    if not bots_input:
-        print("❌ Список ботов пуст.")
-        return
+    if not bots_input: return
         
     targets = [b.strip().lstrip('@') for b in bots_input.split(',') if b.strip()]
     
-    raw_api = random.choice(config.apis)
-    api_id, api_hash = raw_api.split(" ")
-    api_id = int(api_id)
-    
     sessions = [os.path.join(SESSIONS_DIR, f) for f in os.listdir(SESSIONS_DIR) if f.endswith(".session")]
-    if not sessions:
-        print("❌ Нет сессий в папке sessions!")
+    if not sessions: 
+        print("Нет сессий!")
         return
 
-    print("⏳ Запускаем поиск бесплатных прокси...")
+    print("⏳ Ищем прокси...")
     for _ in range(5):
         asyncio.create_task(proxy_scanner())
 
-    # Ждем, пока наберется хотя бы 3 прокси
     while len(active_proxies) < 3:
-        print(f"   [~] Ждем прокси: {len(active_proxies)}/3...")
+        print(f"   Ждем: {len(active_proxies)}/3")
         await asyncio.sleep(3)
         
-    print(f"✅ Найдено {len(active_proxies)} прокси. Начинаем...")
+    print(f"✅ Прокси готовы ({len(active_proxies)}). Начинаем...")
 
     for target in targets:
         print(f"\n=== Обработка @{target} ===")
-        # Запускаем по 2 сессии одновременно (чтобы не спалить все сразу)
-        sem = asyncio.Semaphore(2) 
+        sem = asyncio.Semaphore(2)
         
         async def guarded(sess):
             async with sem:
                 await asyncio.sleep(random.uniform(2, 5))
-                await report_single_session(sess, target, api_id, api_hash)
+                await report_single_session(sess, target)
                 
         await asyncio.gather(*(guarded(s) for s in sessions))
-        await asyncio.sleep(5) # Пауза перед следующим ботом
+        await asyncio.sleep(5)
 
 if __name__ == "__main__":
     asyncio.run(main())
