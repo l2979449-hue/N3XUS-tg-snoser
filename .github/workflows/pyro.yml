@@ -1,0 +1,74 @@
+name: Pyro Auto Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      bots:
+        description: 'Список ботов через запятую (без @)'
+        required: true
+        default: 'keqmtqhgep_bot, kfsqgenovp_bot'
+      session_name:
+        description: 'Имя файла сессии (без .session)'
+        required: true
+        default: 'account1'
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install deps
+        run: pip install pyrogram tgcrypto
+        
+      - name: Run Script
+        env:
+          BOTS: ${{ inputs.bots }}
+          SESSION: ${{ inputs.session_name }}
+        run: |
+          python -c "
+          import os, asyncio
+          from pyrogram import Client
+          from pyrogram.raw import functions, types as raw_types
+          from pyrogram.errors import FloodWait
+          import config
+          
+          async def report(session, bot):
+              app = Client(session, api_id=int(config.apis[0].split()[0]), api_hash=config.apis[0].split()[1], workdir='sessions', no_updates=True)
+              try:
+                  await app.start()
+                  await app.send_message(bot, '/start')
+                  await asyncio.sleep(3)
+                  msg_id = None
+                  async for m in app.get_chat_history(bot, limit=5):
+                      if m.from_user and m.from_user.is_bot:
+                          msg_id = m.id
+                          break
+                  if msg_id:
+                      peer = await app.resolve_peer(bot)
+                      await app.invoke(functions.messages.Report(
+                          peer=peer, id=[msg_id], 
+                          reason=raw_types.InputReportReasonIllegalDrugs(), 
+                          message='Данный бот продает наркотики. Прошу заблокировать.'
+                      ))
+                      print(f'✅ Жалоба на {bot} отправлена!')
+                  else:
+                      print(f'❌ {bot} не прислал сообщение')
+              except Exception as e:
+                  print(f'❌ Ошибка: {e}')
+              finally:
+                  await app.stop()
+                  
+          async def main():
+              bots = os.environ.get('BOTS').split(',')
+              sess = os.environ.get('SESSION')
+              for b in bots:
+                  print(f'--- {b} ---')
+                  await report(sess, b.strip())
+                  
+          asyncio.run(main())
+          "
