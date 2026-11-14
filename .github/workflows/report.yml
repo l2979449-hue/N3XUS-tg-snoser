@@ -1,4 +1,5 @@
-name: Telegram Report Tool
+
+  name: Telegram Report Tool
 
 on:
   workflow_dispatch:
@@ -42,46 +43,6 @@ jobs:
       - name: Install dependencies
         run: pip install requests colorama
 
-      - name: Create runner
-        run: |
-          cat << 'EOF' > runner.py
-          import os
-          import sys
-          
-          # Настройки из GitHub Actions
-          os.environ['GITHUB_USER_ID'] = os.environ.get('USER_ID', '')
-          os.environ['GITHUB_USERNAME'] = os.environ.get('USERNAME', '')
-          os.environ['GITHUB_LINK'] = os.environ.get('LINK', '')
-          os.environ['GITHUB_TOTAL'] = os.environ.get('TOTAL_REQUESTS', '50')
-          os.environ['GITHUB_TYPE'] = os.environ.get('COMPLAINT_TYPE', 'Спам')
-          
-          # Читаем ваш скрипт
-          with open('NTS.py', 'r', encoding='utf-8') as f:
-              code = f.read()
-          
-          # Подменяем функцию ввода
-          mock_input = """
-          def get_user_input():
-              import os
-              return (
-                  os.environ.get('GITHUB_USER_ID'),
-                  os.environ.get('GITHUB_USERNAME'),
-                  os.environ.get('GITHUB_LINK'),
-                  int(os.environ.get('GITHUB_TOTAL', 50)),
-                  os.environ.get('GITHUB_TYPE')
-              )
-          """
-          
-          import re
-          code = re.sub(r'def get_user_input\(\):.*?return user_id, user, id, total_requests, chosen_complaint_type', mock_input, code, flags=re.DOTALL)
-          
-          # Убираем паузу в конце
-          code = code.replace('input("\\nНажмите Enter для выхода...")', 'pass')
-          
-          # Выполняем
-          exec(code)
-          EOF
-
       - name: Run Report Script
         env:
           USER_ID: ${{ inputs.user_id }}
@@ -89,4 +50,33 @@ jobs:
           LINK: ${{ inputs.link }}
           TOTAL_REQUESTS: ${{ inputs.total_requests }}
           COMPLAINT_TYPE: ${{ inputs.complaint_type }}
-        run: python runner.py
+        run: |
+          python -c "
+          import os
+          import sys
+          
+          # Подменяем стандартный ввод, чтобы он брал данные из формы GitHub
+          answers = [
+              os.environ.get('USER_ID'),
+              os.environ.get('USERNAME'),
+              os.environ.get('LINK'),
+              os.environ.get('TOTAL_REQUESTS'),
+              '1' # Выбор причины (если Наркотики - первая в списке, то 1)
+          ]
+          
+          def fake_input(prompt=''):
+              if not answers:
+                  return ''
+              return answers.pop(0)
+              
+          import builtins
+          builtins.input = fake_input
+          
+          # Убираем паузу в конце скрипта, чтобы он не завис навсегда
+          with open('NTS.py', 'r', encoding='utf-8') as f:
+              code = f.read()
+          code = code.replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass')
+          
+          # Запускаем модифицированный код
+          exec(code)
+          "
