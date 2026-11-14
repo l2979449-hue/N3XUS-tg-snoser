@@ -6,7 +6,7 @@ import threading
 from pyrogram import Client
 from pyrogram.raw import functions, types as raw_types
 
-SESSIONS_DIR = "sessions"
+SESSIONS_DIR = os.path.abspath("sessions")
 active_proxies = []
 proxy_lock = threading.Lock()
 
