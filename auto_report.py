@@ -6,10 +6,6 @@ import threading
 from pyrogram import Client
 from pyrogram.raw import functions, types as raw_types
 
-# ВПИШИТЕ СВОИ ДАННЫЕ СЮДА:
-API_ID = 1234567 
-API_HASH = "abcdef1234567890abcdef1234567890"
-
 SESSIONS_DIR = "sessions"
 active_proxies = []
 proxy_lock = threading.Lock()
@@ -60,13 +56,16 @@ async def report_single_session(session_path, target_bot):
     host = proxy_ip.split(":")[0]
     port = int(proxy_ip.split(":")[1]) if ":" in proxy_ip else 80
     
-    app = Client(
-        name=session_name, api_id=API_ID, api_hash=API_HASH, 
-        workdir=SESSIONS_DIR, no_updates=True,
-        proxy=dict(scheme="http", hostname=host, port=port)
-    )
-    
     try:
+        # ВОТ ГЛАВНЫЙ ФИКС: Мы не указываем api_id и api_hash!
+        # Pyrogram сам достанет их из файла .session
+        app = Client(
+            name=session_name, 
+            workdir=SESSIONS_DIR, 
+            no_updates=True,
+            proxy=dict(scheme="http", hostname=host, port=port)
+        )
+        
         await app.start()
         await app.send_message(target_bot, "/start")
         await asyncio.sleep(3)
@@ -125,6 +124,7 @@ async def main():
 
     for target in targets:
         print(f"\n=== Обработка @{target} ===")
+        # Ограничиваем до 2 сессий одновременно
         sem = asyncio.Semaphore(2)
         
         async def guarded(sess):
