@@ -1,48 +1,40 @@
-name: Telegram Report Tool
+name: Report
 
 on:
   workflow_dispatch:
     inputs:
       user_id:
-        description: 'ID пользователя/канала'
+        description: 'ID'
         required: true
-        type: string
       username:
-        description: 'Юзернейм (@username)'
+        description: 'Username'
         required: true
-        type: string
       link:
-        description: 'Ссылка на нарушение (если есть)'
+        description: 'Link'
         required: false
-        type: string
         default: 'нет'
       total_requests:
-        description: 'Количество жалоб'
+        description: 'Кол-во'
         required: true
-        type: string
         default: '50'
       complaint_type:
-        description: 'Тип жалобы'
+        description: 'Тип (Спам/Наркотики)'
         required: true
-        type: string
         default: 'Спам'
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: Install dependencies
+      - name: Install
         run: pip install requests colorama
-
-      - name: Run Report Script
+      - name: Run
         env:
           USER_ID: ${{ inputs.user_id }}
           USERNAME: ${{ inputs.username }}
@@ -51,31 +43,11 @@ jobs:
           COMPLAINT_TYPE: ${{ inputs.complaint_type }}
         run: |
           python -c "
-          import os
-          import sys
-          import builtins
-          
-          # Подменяем стандартный ввод, чтобы он брал данные из формы GitHub
-          answers = [
-              os.environ.get('USER_ID'),
-              os.environ.get('USERNAME'),
-              os.environ.get('LINK'),
-              os.environ.get('TOTAL_REQUESTS'),
-              '1' # Выбор причины (1 = первая в списке)
-          ]
-          
-          def fake_input(prompt=''):
-              if not answers:
-                  return ''
-              return answers.pop(0)
-              
+          import os, builtins
+          answers = [os.environ.get('USER_ID'), os.environ.get('USERNAME'), os.environ.get('LINK'), os.environ.get('TOTAL_REQUESTS'), '1']
+          def fake_input(p=''):
+              return answers.pop(0) if answers else ''
           builtins.input = fake_input
-          
-          # Запускаем NTS.py
-          with open('NTS.py', 'r', encoding='utf-8') as f:
-              code = f.read()
-          
-          # Убираем паузу в конце
-          code = code.replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass')
+          code = open('NTS.py', encoding='utf-8').read().replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass')
           exec(code)
           "
