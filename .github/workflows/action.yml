@@ -3,17 +3,20 @@ on:
   workflow_dispatch:
     inputs:
       user_id:
-        description: 'ID'
-        required: true
-        default: '123456'
+        description: 'ID (если нет - оставь пустым)'
+        required: false
+        default: ''
       username:
-        description: 'Username'
+        description: 'Список ботов через ЗАПЯТУЮ (без @)'
         required: true
-        default: '@test'
       total_requests:
-        description: 'Count'
+        description: 'Сколько жалоб на КАЖДОГО бота?'
         required: true
-        default: '50'
+        default: '3'
+      reason:
+        description: 'Причина (1-Наркотики, 2-Спам, 3-Порно...)'
+        required: true
+        default: '1'
 
 jobs:
   build:
@@ -29,11 +32,22 @@ jobs:
           U_ID: ${{ inputs.user_id }}
           U_NAME: ${{ inputs.username }}
           U_COUNT: ${{ inputs.total_requests }}
+          U_REASON: ${{ inputs.reason }}
         run: |
           python -c "
           import os, builtins
-          ans = [os.environ.get('U_ID'), os.environ.get('U_NAME'), 'https://t.me', os.environ.get('U_COUNT'), '1']
+          
+          # Передаем данные в скрипт: ID, Список, Пустая ссылка, Кол-во, Причина
+          ans = [
+              os.environ.get('U_ID', ''), 
+              os.environ.get('U_NAME', ''), 
+              '', 
+              os.environ.get('U_COUNT', '3'), 
+              os.environ.get('U_REASON', '1')
+          ]
           def f(p=''): return ans.pop(0) if ans else ''
           builtins.input = f
-          exec(open('NTS.py', encoding='utf-8').read().replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass'))
+          
+          code = open('NTS.py', encoding='utf-8').read().replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass')
+          exec(code)
           "
