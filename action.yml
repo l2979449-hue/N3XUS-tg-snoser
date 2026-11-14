@@ -1,0 +1,39 @@
+name: tg-report
+on:
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: 'ID'
+        required: true
+        default: '123456'
+      username:
+        description: 'Username'
+        required: true
+        default: '@test'
+      total_requests:
+        description: 'Count'
+        required: true
+        default: '50'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - run: pip install requests colorama
+      - name: Start
+        env:
+          U_ID: ${{ inputs.user_id }}
+          U_NAME: ${{ inputs.username }}
+          U_COUNT: ${{ inputs.total_requests }}
+        run: |
+          python -c "
+          import os, builtins
+          ans = [os.environ.get('U_ID'), os.environ.get('U_NAME'), 'https://t.me', os.environ.get('U_COUNT'), '1']
+          def f(p=''): return ans.pop(0) if ans else ''
+          builtins.input = f
+          exec(open('NTS.py', encoding='utf-8').read().replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass'))
+          "
