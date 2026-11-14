@@ -20,7 +20,7 @@ on:
         description: 'Количество жалоб'
         required: true
         type: string
-        default: '100'
+        default: '50'
       complaint_type:
         description: 'Тип жалобы (Спам, Порнография, Мошенничество и т.д.)'
         required: true
@@ -42,6 +42,46 @@ jobs:
       - name: Install dependencies
         run: pip install requests colorama
 
+      - name: Create runner
+        run: |
+          cat << 'EOF' > runner.py
+          import os
+          import sys
+          
+          # Настройки из GitHub Actions
+          os.environ['GITHUB_USER_ID'] = os.environ.get('USER_ID', '')
+          os.environ['GITHUB_USERNAME'] = os.environ.get('USERNAME', '')
+          os.environ['GITHUB_LINK'] = os.environ.get('LINK', '')
+          os.environ['GITHUB_TOTAL'] = os.environ.get('TOTAL_REQUESTS', '50')
+          os.environ['GITHUB_TYPE'] = os.environ.get('COMPLAINT_TYPE', 'Спам')
+          
+          # Читаем ваш скрипт
+          with open('NTS.py', 'r', encoding='utf-8') as f:
+              code = f.read()
+          
+          # Подменяем функцию ввода
+          mock_input = """
+          def get_user_input():
+              import os
+              return (
+                  os.environ.get('GITHUB_USER_ID'),
+                  os.environ.get('GITHUB_USERNAME'),
+                  os.environ.get('GITHUB_LINK'),
+                  int(os.environ.get('GITHUB_TOTAL', 50)),
+                  os.environ.get('GITHUB_TYPE')
+              )
+          """
+          
+          import re
+          code = re.sub(r'def get_user_input\(\):.*?return user_id, user, id, total_requests, chosen_complaint_type', mock_input, code, flags=re.DOTALL)
+          
+          # Убираем паузу в конце
+          code = code.replace('input("\\nНажмите Enter для выхода...")', 'pass')
+          
+          # Выполняем
+          exec(code)
+          EOF
+
       - name: Run Report Script
         env:
           USER_ID: ${{ inputs.user_id }}
@@ -49,31 +89,4 @@ jobs:
           LINK: ${{ inputs.link }}
           TOTAL_REQUESTS: ${{ inputs.total_requests }}
           COMPLAINT_TYPE: ${{ inputs.complaint_type }}
-        run: |
-          # Модифицируем скрипт на лету, чтобы он брал данные из формы GitHub
-          python -c "
-          import os, re
-          
-          # Читаем ваш оригинальный файл (он должен называться NTS.py или requests.txt)
-          with open('NTS.py', 'r', encoding='utf-8') as f:
-              code = f.read()
-          
-          # Подменяем функцию ввода на данные из GitHub Actions
-          mock_input = '''
-def get_user_input():
-    import os
-    user_id = os.environ.get('USER_ID')
-    user = os.environ.get('USERNAME')
-    id = os.environ.get('LINK', 'нет')
-    total_requests = int(os.environ.get('TOTAL_REQUESTS', '100'))
-    chosen_complaint_type = os.environ.get('COMPLAINT_TYPE', 'Спам')
-    return user_id, user, id, total_requests, chosen_complaint_type
-'''
-          code = re.sub(r'def get_user_input\(\):.*?return user_id, user, id, total_requests, chosen_complaint_type', mock_input, code, flags=re.DOTALL)
-          
-          # Убираем паузу в конце
-          code = code.replace('input(\"\\\\nНажмите Enter для выхода...\")', 'pass')
-          
-          # Запускаем
-          exec(code)
-          "
+        run: python runner.py
