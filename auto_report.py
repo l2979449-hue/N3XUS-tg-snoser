@@ -1,74 +1,56 @@
 import asyncio
 import os
 import random
-import requests
-import threading
+from urllib.parse import urlparse
 from pyrogram import Client
 from pyrogram.raw import functions, types as raw_types
 
+# ================= НАСТРОЙКИ =================
+API_ID = 2040
+API_HASH = "b18441a1ff607e10a989891a5462e627"
+
+# Папка, где лежат твои Pyrogram-сессии (например, "sessions" или ".")
 SESSIONS_DIR = "."
-active_proxies = []
-proxy_lock = threading.Lock()
 
-def check_proxy(ip):
-    proxy_url = f"http://{ip}"
-    try:
-        res = requests.get("https://api.telegram.org", proxies={"http": proxy_url, "https": proxy_url}, timeout=3)
-        if res.status_code in (200, 302, 404):
-            return ip
-    except:
-        pass
-    return None
+# ТВОИ МОБИЛЬНЫЕ SOCKS5 ПРОКСИ
+MY_PROXIES = [
+    "socks5://1r7jkt5u6u5:15n8bb9nofl@190.2.147.59:1080",
+    "socks5://2417przaex3:2ahqfyg0elh@190.2.147.59:1080",
+    "socks5://uw4omtgdm1:1kjadmf6q4b@190.2.147.59:1080",
+    "socks5://akg176d23l:179lyn4n3yn@190.2.147.59:1080",
+]
 
-async def proxy_scanner():
-    api_url = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=2000&country=all&ssl=yes"
-    while True:
-        try:
-            res = await asyncio.to_thread(requests.get, api_url, timeout=5)
-            if res.status_code == 200:
-                ips = [line.strip() for line in res.text.splitlines() if line.strip()]
-                random.shuffle(ips)
-                for ip in ips:
-                    with proxy_lock:
-                        if len(active_proxies) >= 10:
-                            break
-                    is_alive = await asyncio.to_thread(check_proxy, ip)
-                    if is_alive:
-                        with proxy_lock:
-                            if ip not in active_proxies:
-                                active_proxies.append(ip)
-                                print(f"[+] Найден прокси: {ip}")
-        except Exception:
-            pass
-        await asyncio.sleep(2)
+def get_random_proxy_cfg():
+    """Парсит строку прокси и возвращает словарь для Pyrogram."""
+    proxy_str = random.choice(MY_PROXIES)
+    parsed = urlparse(proxy_str)
+    return dict(
+        scheme="socks5", 
+        hostname=parsed.hostname, 
+        port=parsed.port,
+        username=parsed.username, 
+        password=parsed.password
+    )
 
-async def report_single_session(session_path, target_bot):
-    session_name = os.path.basename(session_path).replace(".session", "")
+# ================= ОСНОВНАЯ ЛОГИКА =================
+async def report_single_session(session_name, target_bot):
+    proxy_cfg = get_random_proxy_cfg()
     
-    with proxy_lock:
-        if not active_proxies:
-            print(f"[{session_name}] ❌ Нет прокси.")
-            return False
-        proxy_ip = random.choice(active_proxies)
+    print(f"[{session_name}] 🚀 Заходим в @{target_bot} через {proxy_cfg['hostname']}...")
     
-    print(f"[{session_name}] Через {proxy_ip} заходим в @{target_bot}...")
-    
-    host = proxy_ip.split(":")[0]
-    port = int(proxy_ip.split(":")[1]) if ":" in proxy_ip else 80
+    app = Client(
+        name=session_name, 
+        api_id=API_ID,        # <--- Вставили твои ключи
+        api_hash=API_HASH,    # <--- Вставили твои ключи
+        workdir=SESSIONS_DIR, 
+        no_updates=True,
+        proxy=proxy_cfg       # <--- Используем SOCKS5
+    )
     
     try:
-        # ВОТ ГЛАВНЫЙ ФИКС: Мы не указываем api_id и api_hash!
-        # Pyrogram сам достанет их из файла .session
-        app = Client(
-            name=session_name, 
-            workdir=SESSIONS_DIR, 
-            no_updates=True,
-            proxy=dict(scheme="http", hostname=host, port=port)
-        )
-        
         await app.start()
         await app.send_message(target_bot, "/start")
-        await asyncio.sleep(3)
+        await asyncio.sleep(3) # Ждем ответа от бота
         
         found_msg_id = None
         async for msg in app.get_chat_history(target_bot, limit=5):
@@ -80,6 +62,7 @@ async def report_single_session(session_path, target_bot):
             print(f"[{session_name}] ❌ Бот не ответил.")
             return False
             
+        # Жалуемся на сообщение (на меню с наркотиками)
         peer = await app.resolve_peer(target_bot)
         await app.invoke(
             functions.messages.Report(
@@ -88,52 +71,53 @@ async def report_single_session(session_path, target_bot):
                 message="Данный бот рекламирует и продает наркотики. Прошу проверить и заблокировать."
             )
         )
-        print(f"[{session_name}] ✅ Жалоба отправлена!")
+        print(f"[{session_name}] ✅ Жалоба на @{target_bot} отправлена!")
         return True
         
     except Exception as e:
-        print(f"[{session_name}] ❌ Ошибка: {str(e)[:50]}")
-        with proxy_lock:
-            if proxy_ip in active_proxies:
-                active_proxies.remove(proxy_ip)
+        print(f"[{session_name}] ❌ Ошибка: {str(e)[:60]}")
         return False
     finally:
-        try: await app.stop()
-        except: pass
+        try: 
+            await app.stop()
+        except: 
+            pass
 
 async def main():
-    bots_input = os.environ.get("BOTS_LIST", "")
-    if not bots_input: return
+    # Читаем список ботов из файла
+    if not os.path.exists("targets.txt"):
+        print("❌ Файл targets.txt не найден! Создай его и впиши ботов.")
+        return
         
-    targets = [b.strip().lstrip('@') for b in bots_input.split(',') if b.strip()]
+    with open("targets.txt", "r", encoding="utf-8") as f:
+        targets = [t.strip().lstrip('@') for t in f.read().replace(',', '\n').split('\n') if t.strip()]
+
+    # Ищем сессии Pyrogram
+    sessions = [f.replace(".session", "") for f in os.listdir(SESSIONS_DIR) 
+                if f.endswith(".session") and "_telethon" not in f]
     
-    sessions = [os.path.join(SESSIONS_DIR, f) for f in os.listdir(SESSIONS_DIR) if f.endswith(".session")]
     if not sessions: 
-        print("Нет сессий!")
+        print("❌ Нет Pyrogram сессий в папке!")
         return
 
-    print("⏳ Ищем прокси...")
-    for _ in range(5):
-        asyncio.create_task(proxy_scanner())
-
-    while len(active_proxies) < 3:
-        print(f"   Ждем: {len(active_proxies)}/3")
-        await asyncio.sleep(3)
-        
-    print(f"✅ Прокси готовы ({len(active_proxies)}). Начинаем...")
-
+    print(f"=====================================")
+    print(f"📱 Сессий: {len(sessions)}. 🎯 Целей: {len(targets)}.")
+    print(f"🌐 Прокси: {len(MY_PROXIES)} мобильных SOCKS5.")
+    print(f"=====================================")
+    
     for target in targets:
         print(f"\n=== Обработка @{target} ===")
-        # Ограничиваем до 2 сессий одновременно
-        sem = asyncio.Semaphore(2)
+        
+        # Ставим ограничение в 3 потока, чтобы прокси не зависли
+        sem = asyncio.Semaphore(3)
         
         async def guarded(sess):
             async with sem:
-                await asyncio.sleep(random.uniform(2, 5))
+                await asyncio.sleep(random.uniform(1, 3))
                 await report_single_session(sess, target)
                 
         await asyncio.gather(*(guarded(s) for s in sessions))
-        await asyncio.sleep(5)
+        await asyncio.sleep(3) # Пауза перед следующим ботом
 
 if __name__ == "__main__":
     asyncio.run(main())
